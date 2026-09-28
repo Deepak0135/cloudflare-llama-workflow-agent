@@ -1,0 +1,16 @@
+{
+  "name": "cf-ai-agent",
+  "version": "1.0.0",
+  "description": "Cloudflare AI Agent with Llama 3.3, Workflows, Pages, and KV Memory",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^3.90.0"
+  }
+}

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloudflare Streaming Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen">
+  <header class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/60 backdrop-blur">
+    <div>
+      <h1 class="text-base font-bold text-orange-400">Cloudflare Edge AI Agent</h1>
+      <p class="text-xs text-slate-400">Real-Time Streaming • Workers AI (Llama 3.3 70bB) • KV Memory</p>
+    </div>
+    <span id="session-badge" class="text-xs bg-slate-800 text-slate-300 font-mono px-2 py-1 rounded border border-slate-700"></span>
+  </header>
+
+  <main id="chat-window" class="flex-1 overflow-y-auto p-4 space-y-4 max-w-3xl w-full mx-auto"></main>
+
+  <footer class="p-4 border-t border-slate-800 bg-slate-900/60 backdrop-blur">
+    <form id="chat-form" class="max-w-3xl mx-auto flex gap-2">
+      <input
+        id="prompt-input"
+        type="text"
+        placeholder="Type a message..."
+        class="flex-1 px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 focus:outline-none focus:border-orange-500 text-white placeholder-slate-500"
+        required
+      />
+      <button
+        id="send-btn"
+        type="submit"
+        class="px-5 py-2 bg-orange-600 hover:bg-orange-500 transition rounded-lg font-medium text-white shadow-sm"
+      >
+        Send
+      </button>
+    </form>
+  </footer>
+
+  <script>
+    let sessionId = localStorage.getItem('cf_session_id') || crypto.randomUUID();
+    localStorage.setItem('cf_session_id', sessionId);
+    document.getElementById('session-badge').innerText = `Session: ${sessionId.slice(0, 8)}`;
+
+    const chatWindow = document.getElementById('chat-window');
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('prompt-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    function appendMessage(role, text = '') {
+      const bubble = document.createElement('div');
+      bubble.className = `p-3.5 rounded-xl max-w-[85%] whitespace-pre-wrap text-sm leading-relaxed ${
+        role === 'user'
+          ? 'ml-auto bg-orange-600 text-white'
+          : 'mr-auto bg-slate-800 text-slate-200 border border-slate-700'
+      }`;
+      bubble.innerText = text;
+      chatWindow.appendChild(bubble);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+      return bubble;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const prompt = input.value.trim();
+      if (!prompt) return;
+
+      appendMessage('user', prompt);
+      input.value = '';
+      input.disabled = true;
+      sendBtn.disabled = true;
+
+      const assistantBubble = appendMessage('assistant', '');
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, prompt })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server returned ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+            if (trimmed.includes('[DONE]')) break;
+
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.response) {
+                assistantBubble.innerText += data.response;
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (err) {
+        assistantBubble.innerText = `Error: ${err.message}`;
+      } finally {
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    });
+  </script>
+</body>
+</html>
